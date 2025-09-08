@@ -9,13 +9,30 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "package-analyzer-container",
+          "title": "Package Analyzer",
+          "icon": "$(symbol-package)"
+        }
+      ]
+    },
+    "views": {
+      "package-analyzer-container": [
+        {
+          "id": "package-analyzer.sidebar",
+          "name": "Analysis Results",
+          "type": "webview"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "package-analyzer.inspect",
-        "title": "inspect package"
+        "title": "Inspect Package"
       }
     ]
   },
