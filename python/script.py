@@ -6,111 +6,59 @@ import json
 import importlib
 from types import ModuleType
 import warnings
-from typing import NamedTuple
-from collections import namedtuple
+import contextlib
 from inspect import Signature
 import os
+import io
 
-"""
-{
-    fastapi: {
-        members: [
-            ("FastAPI", <class FastAPI>)
-        ],
-        subpackages: [
-            {
-                name: "fastapi.middlewares",
-                members: [()]
-            }
-        ]
-    }
-}
-"""
+SKIP_METHODS = [
+    "__repr__", "__str__", "__format__", "__bytes__",
+    "__bool__", "__int__", "__float__", "__complex__", "__index__",
+    "__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__",
+    "__add__", "__sub__", "__mul__", "__matmul__", "__truediv__",
+    "__floordiv__", "__mod__", "__divmod__", "__pow__",
+    "__lshift__", "__rshift__", "__and__", "__or__", "__xor__",
+    "__radd__", "__rsub__", "__rmul__", "__rmatmul__", "__rtruediv__",
+    "__rfloordiv__", "__rmod__", "__rdivmod__", "__rpow__",
+    "__rlshift__", "__rrshift__", "__rand__", "__ror__", "__rxor__",
+    "__iadd__", "__isub__", "__imul__", "__imatmul__", "__itruediv__",
+    "__ifloordiv__", "__imod__", "__ipow__", "__ilshift__",
+    "__irshift__", "__iand__", "__ior__", "__ixor__",
+    "__getattr__", "__getattribute__", "__setattr__", "__delattr__", "__dir__",
+    "__len__", "__getitem__", "__setitem__", "__delitem__",
+    "__iter__", "__next__", "__contains__",
+    "__enter__", "__exit__",
+    "__call__", "__del__",
+    "__copy__", "__deepcopy__", "__reduce__", "__reduce_ex__",
+    "__hash__", "__sizeof__", "__class_getitem__", "__missing__"
+]
+SKIP_PACKAGES = [
+    "pygments", "certifi", "rsa", "rich", "click", 
+    "idna", "chardet", "pip", "six", "mdurl", "ecdsa", 
+    "colorama", "arrow", "text_unicode", "pyasn1", 
+    "typing_inspection", "text_unidecode", "binaryornot", "annotated_type", "anyio", "annotated_types"
+]
+SKIP_MODULES = [
+    "builtin", "dataclasses", "typing", "typing_extensions", None
+]
+warnings.filterwarnings("ignore")
 
-"""
-{
-    packages: [ 
-        {
-            base: {
-                functions: [
-                    {
-                        name: "",
-                        doc: "",
-                        signature: "() => type"
-                    }
-                ],
-                classes: [
-                    {
-                        name: "Flask"
-                        doc: "Flask class"
-                        functions: [
-                            {
-                                name: "",
-                                doc: "",
-                                signature: "() => type"
-                            }
-                        ],
-                    }
-                ]
-            },
-            dependencies: [
-                {
-                    functions: [
-                        {
-                            func: docstring,
-                            signature: "() => type"
-                        }
-                    ],
-                    classes: {
-                        name: "Flask"
-                        doc: "Flask class"
-                        functions: [
-                            {
-                                of: "Flask"
-                                name: "",
-                                doc: "",
-                                ref: "",                                
-                                signature: "() => type"
-                            }
-                        ],
-                    }
-                }   
-            ]
-        }
-    ]
-}
-"""
 
-def to_str(signature: Signature) -> str:
+def flatten(signature: Signature) -> str:
     return signature.__str__()
 
-
-warnings.filterwarnings("ignore")
-SKIP_PACKAGES = {
-    "pygments", "certifi", "rsa", "rich", "click", 
-    "idna", "chardet", "pip", "six", "mdurl", "ecdsa"
-}
-SKIP_MODULES = {
-    "builtin", "dataclasses", "typing", "typing_extensions", None
-}
 packages = dict()
-big_metadata = []
+big_metadata = []  
 
 
-def find_functions(initial_ref: object, storage: list) -> None:
-    for name, ref in inspect.getmembers(initial_ref, inspect.isfunction):
-        if ref.__module__ in SKIP_MODULES:
-            continue
-                
-        storage.append({
-            "name": name,
-            "doc": inspect.getdoc(ref),
-            "signature": to_str(inspect.signature(ref))
-        })    
-
-
-def find_classes():
-    ...
+def safe_import(name: str):
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return importlib.import_module(name)
+    except SystemExit:
+        return None
+    except Exception:
+        return None
     
 
 def build_tree(name: str, members: list[tuple]):
@@ -119,34 +67,33 @@ def build_tree(name: str, members: list[tuple]):
         "base": {"functions": [], "classes": []}
     }
     
-    for name0, ref0 in members: 
+    for name_0, obj_0 in members: 
 
-        if inspect.isclass(ref0):
-            ref_name = ref0.__name__
+        if inspect.isclass(obj_0):
             functions = []
             
-            for name1, ref1 in inspect.getmembers(ref0, inspect.isfunction):
-                if ref1.__module__ in SKIP_MODULES:
+            for name_1, obj_1 in inspect.getmembers(obj_0, inspect.isfunction):
+                if obj_1.__module__ in SKIP_MODULES or name_1 in SKIP_METHODS:
                     continue
-                
+                                
                 functions.append({
-                    "name": name1,
-                    "doc": inspect.getdoc(ref1),
-                    "signature": to_str(inspect.signature(ref1))
+                    "name": name_1,
+                    "doc": inspect.getdoc(obj_1),
+                    "signature": flatten(inspect.signature(obj_1))
                 })
             
             context["base"]["classes"].append({
-                "name": ref_name,
-                "doc": inspect.getdoc(ref0),
+                "name": obj_0.__name__,
+                "doc": inspect.getdoc(obj_0),
                 "functions": functions                
             })
             
             
-        elif inspect.isfunction(ref0):
+        elif inspect.isfunction(obj_0):
             context["base"]["functions"].append({
-                "name": ref0.__name__,
-                "doc": inspect.getdoc(ref0),
-                "signature": to_str(inspect.signature(ref0))
+                "name": obj_0.__name__,
+                "doc": inspect.getdoc(obj_0),
+                "signature": flatten(inspect.signature(obj_0))
             })
         
     big_metadata.append(context)
@@ -168,11 +115,13 @@ def find_subpackages(package: ModuleType) -> None:
                 if name.startswith("numpy.f2py"):
                     continue
                 
-                sub_package = importlib.import_module(name)
+                sub_package = safe_import(name)
                 packages[pkg_name]["subpackages"].append({
                     "name": name,
                     "members": inspect.getmembers(sub_package)
                 }) 
+            except SystemExit:
+                pass
             except Exception:
                 pass
             
